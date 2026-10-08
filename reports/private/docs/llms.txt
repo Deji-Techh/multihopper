@@ -1,0 +1,37 @@
+# MultiHopper
+
+MultiHopper is a protocol for scheduled, multi-hop token transfers. Integrators use a REST API to create and fund routes; on-chain smart contracts handle trustless, keeper-executed delivery. Original tokens are locked in a program-controlled vault while wrapper tokens (Token2022) flow through the route.
+
+## Get started
+
+- [Quickstart](https://docs.multihopper.com/quickstart): Three-call flow to create, prepare, and confirm a transfer
+- [API Introduction](https://docs.multihopper.com/api-reference/introduction): Auth, error codes, and rate limits
+
+## API Reference
+
+- [Estimate fees](https://docs.multihopper.com/api-reference/transfers/estimate): Check cost and SOL requirements before creating a transfer
+- [Create transfer](https://docs.multihopper.com/api-reference/transfers/create): Create a quoted transfer (POST /transfers)
+- [Prepare transfer](https://docs.multihopper.com/api-reference/transfers/prepare): Get serialized transaction bundles to sign (POST /transfers/:id/prepare)
+- [Confirm broadcast](https://docs.multihopper.com/api-reference/transfers/confirm-broadcast): Submit signatures and trigger on-chain deployment (POST /transfers/:id/confirm-broadcast)
+- [Get transfer](https://docs.multihopper.com/api-reference/transfers/get): Poll status, phase, and progress (GET /transfers/:id)
+- [List transfers](https://docs.multihopper.com/api-reference/transfers/list): Query transfers by status or date (GET /transfers)
+- [Webhooks](https://docs.multihopper.com/api-reference/webhooks/events): Real-time transfer lifecycle events via HMAC-signed POST
+- [Usage](https://docs.multihopper.com/api-reference/usage): Fee and volume summary for your integration
+
+## Protocol
+
+- [How it works](https://docs.multihopper.com/protocol/how-it-works): Vault-backed wrapper tokens, orchestrator, keeper execution
+- [Architecture](https://docs.multihopper.com/protocol/architecture): Smart contract program IDs, PDA seeds, application stack
+- [Route lifecycle](https://docs.multihopper.com/protocol/route-lifecycle): Phases from quote through settlement and recovery
+
+## Concepts
+
+- [Routes](https://docs.multihopper.com/concepts/routes): The core routing primitive — RouteConfig fields, hop structure, constraints
+- [Wrapper tokens](https://docs.multihopper.com/concepts/wrapper-tokens): Token2022 permanent delegate, 1:1 vault backing, transfer hook
+- [Orchestrator](https://docs.multihopper.com/concepts/orchestrator): Step-based permissionless deployment engine
+- [Keepers](https://docs.multihopper.com/concepts/keepers): Permissionless hop and step execution network
+- [Security model](https://docs.multihopper.com/concepts/security): Trust assumptions and on-chain guarantees
+
+## Agentic Integration
+
+- [Agentic integration guide](https://docs.multihopper.com/guides/agentic-integration): Full guide for autonomous agents — transaction signing, broadcast ordering, expiry handling, MCP tool mapping, and a copyable CLAUDE.md context block

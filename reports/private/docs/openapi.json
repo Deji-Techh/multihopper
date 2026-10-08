@@ -1,0 +1,1347 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MultiHopper API",
+    "description": "REST API for scheduled multi-hop transfers on Solana.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://multihopper.com/api/v1",
+      "description": "Production (mainnet) — issues mh_live_ keys"
+    },
+    {
+      "url": "https://devnet.multihopper.com/api/v1",
+      "description": "Devnet — issues mh_test_ keys, Solana devnet"
+    }
+  ],
+  "security": [
+    { "apiKey": [] }
+  ],
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "API key prefixed with `mh_test_` (test mode) or `mh_live_` (live mode). Can also be passed as a Bearer token: `Authorization: Bearer mh_live_abc123...`"
+      }
+    },
+    "schemas": {
+      "Transfer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Internal transfer ID."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Your external ID, if provided.",
+            "nullable": true
+          },
+          "supportBundleId": {
+            "type": "string",
+            "description": "Human-readable support reference (e.g. `MH-acme-42`).",
+            "nullable": true
+          },
+          "tokenMint": {
+            "type": "string",
+            "description": "Solana mint address of the token being transferred."
+          },
+          "tokenSymbol": {
+            "type": "string",
+            "description": "Token symbol (e.g. `SOL`).",
+            "nullable": true
+          },
+          "amountRaw": {
+            "type": "string",
+            "description": "Transfer amount in base units."
+          },
+          "amountTokens": {
+            "type": "string",
+            "description": "Human-readable token amount."
+          },
+          "sourceOwner": {
+            "type": "string",
+            "description": "Solana public key of the wallet that signs and pays for the transfer."
+          },
+          "recipientWallet": {
+            "type": "string",
+            "description": "Solana public key of the final recipient."
+          },
+          "fundingStrategy": {
+            "type": "string",
+            "description": "Internal funding strategy used (e.g. `direct_orchestration`).",
+            "nullable": true
+          },
+          "hops": {
+            "type": "integer",
+            "description": "Number of abstraction hops."
+          },
+          "arrivalSeconds": {
+            "type": "integer",
+            "description": "Target arrival time in seconds."
+          },
+          "pricingTier": {
+            "type": "string",
+            "description": "Pricing tier applied.",
+            "nullable": true
+          },
+          "percentFeeBps": {
+            "type": "integer",
+            "description": "Percentage fee in basis points.",
+            "nullable": true
+          },
+          "totalFlatFeeLamports": {
+            "type": "integer",
+            "description": "Total flat fee in lamports.",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "Transfer status.",
+            "enum": ["quote", "awaiting_signature", "processing", "completed", "failed", "expired", "refunded"]
+          },
+          "isTest": {
+            "type": "boolean",
+            "description": "Whether this transfer was created with a test-mode API key."
+          },
+          "quotedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when pricing was quoted.",
+            "nullable": true
+          },
+          "depositReceivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the deposit was confirmed.",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the transfer completed.",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp after which the transfer expires if not funded.",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 creation timestamp."
+          }
+        }
+      },
+      "TransferExtended": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Transfer" },
+          {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "description": "Current execution phase derived from status and on-chain state.",
+                "enum": ["quoted", "funding", "deploying", "partially_deployed", "executing", "settled", "failed", "recoverable", "expired", "rescued", "reclaimed"]
+              },
+              "progress": {
+                "type": "object",
+                "properties": {
+                  "hopsCompleted": { "type": "integer", "description": "Number of hops that have executed." },
+                  "hopsTotal": { "type": "integer", "description": "Total number of hops in the route." }
+                }
+              },
+              "lastError": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "code": { "type": "string", "description": "Structured error code (e.g. `MH_042`)." },
+                  "message": { "type": "string" },
+                  "at": { "type": "string", "format": "date-time" }
+                }
+              },
+              "recovery": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "canRescue": { "type": "boolean", "description": "Whether locked funds can be rescued." },
+                  "rescuableLamports": { "type": "integer" },
+                  "rescuableAccounts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": { "type": "string", "enum": ["route_pda", "step_state", "orchestrator_config", "keeper", "ata"] },
+                        "lamports": { "type": "integer" }
+                      }
+                    }
+                  },
+                  "canReclaimRent": { "type": "boolean", "description": "Whether closed step account rent can be reclaimed." },
+                  "reclaimableLamports": { "type": "integer" }
+                }
+              },
+              "signatures": {
+                "type": "object",
+                "properties": {
+                  "routeInit": { "type": "array", "items": { "type": "string" }, "description": "On-chain signatures for route initialization transactions." },
+                  "sessionInit": { "type": "array", "items": { "type": "string" }, "description": "On-chain signatures for session initialization transactions." },
+                  "hops": { "type": "array", "items": { "type": "string" }, "description": "On-chain signatures for hop execution transactions." }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PreparedTxBundle": {
+        "type": "object",
+        "description": "Bundle of unsigned transactions to sign and broadcast.",
+        "properties": {
+          "routeInitTxs": {
+            "type": "array",
+            "description": "Transactions to initialize the on-chain route and add hops.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "base64": { "type": "string", "description": "Base64-encoded unsigned VersionedTransaction." }
+              }
+            }
+          },
+          "orchestratorInitTx": {
+            "type": "string",
+            "nullable": true,
+            "description": "Base64-encoded transaction to initialize the orchestrator config. Only present if not already initialized."
+          },
+          "sessionInitTxs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Base64-encoded transactions to initialize step state PDAs and pre-fund the keeper."
+          },
+          "keeperFundingTx": {
+            "type": "string",
+            "nullable": true,
+            "description": "Base64-encoded transaction to transfer SOL to the assigned keeper. Only present if keeper needs funding."
+          },
+          "recentBlockhash": {
+            "type": "string",
+            "description": "Blockhash used to build these transactions. Sign and broadcast before expiry."
+          },
+          "lastValidBlockHeight": {
+            "type": "integer",
+            "description": "Last block height at which these transactions are valid."
+          },
+          "resume": {
+            "type": "object",
+            "description": "Snapshot of on-chain state used to build the bundle. Useful for debugging and retry logic.",
+            "properties": {
+              "routeAlreadyDeployed": { "type": "boolean" },
+              "existingHopCount": { "type": "integer" },
+              "totalHops": { "type": "integer" },
+              "orchestratorAlreadyInitialized": { "type": "boolean" },
+              "completedStepIndices": { "type": "array", "items": { "type": "integer" } },
+              "totalSteps": { "type": "integer" },
+              "keeperAlreadyFunded": { "type": "boolean" },
+              "nothingToDo": { "type": "boolean", "description": "True if all steps are already complete — no signing needed." }
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "description": "All error responses use this envelope.",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Structured error code (e.g. `MH_030`)."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable error message."
+              },
+              "requestId": {
+                "type": "string",
+                "description": "Echo of the `x-request-id` header."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Transfers",
+      "description": "Create and manage multi-hop transfers."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Register and manage webhook endpoints for transfer lifecycle events."
+    },
+    {
+      "name": "Recovery",
+      "description": "Rescue locked funds and reclaim rent from closed accounts."
+    }
+  ],
+  "paths": {
+    "/transfers/estimate": {
+      "post": {
+        "operationId": "estimateTransferFees",
+        "summary": "Estimate Fees",
+        "description": "Estimate fees and required SOL for a potential transfer without creating one. Use this endpoint to show users expected costs before they confirm.",
+        "tags": ["Transfers"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tokenMint", "amountRaw"],
+                "properties": {
+                  "tokenMint": {
+                    "type": "string",
+                    "description": "The Solana mint address of the token to transfer.",
+                    "example": "So11111111111111111111111111111111111111112"
+                  },
+                  "amountRaw": {
+                    "type": "string",
+                    "description": "Raw token amount as a string (e.g. `\"1000000000\"` for 1 SOL).",
+                    "example": "1000000000"
+                  },
+                  "tokenDecimals": {
+                    "type": "integer",
+                    "default": 6,
+                    "minimum": 0,
+                    "maximum": 18,
+                    "description": "Decimal precision of the token. Defaults to 6.",
+                    "example": 9
+                  },
+                  "hops": {
+                    "type": "integer",
+                    "minimum": 3,
+                    "maximum": 10,
+                    "description": "Number of abstraction hops. Defaults to integration setting.",
+                    "example": 7
+                  },
+                  "tokenPriceUsd": {
+                    "type": "number",
+                    "description": "Optional token price in USD. If not provided, the API resolves pricing from Raydium.",
+                    "example": 150.25
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fee estimate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tier": {
+                      "type": "string",
+                      "description": "Pricing tier determined by the USD equivalent of the transfer."
+                    },
+                    "percentFeeBps": {
+                      "type": "integer",
+                      "description": "Percentage fee in basis points."
+                    },
+                    "percentFeeRaw": {
+                      "type": "string",
+                      "description": "Percentage fee in raw token units."
+                    },
+                    "flatFeeLamportsPerHop": {
+                      "type": "integer",
+                      "description": "Flat fee in lamports charged per hop."
+                    },
+                    "totalFlatFeeLamports": {
+                      "type": "integer",
+                      "description": "Total flat fee in lamports across all hops."
+                    },
+                    "integratorPercentShare": {
+                      "type": "string",
+                      "description": "Integrator's share of the percentage fee in raw token units."
+                    },
+                    "integratorFlatShare": {
+                      "type": "integer",
+                      "description": "Integrator's share of the flat fee in lamports."
+                    },
+                    "usdEquivalent": {
+                      "type": "number",
+                      "description": "USD equivalent of the transfer amount at quote time."
+                    },
+                    "isTestMode": {
+                      "type": "boolean",
+                      "description": "Whether this estimate was made with a test-mode API key."
+                    },
+                    "tokens": {
+                      "type": "object",
+                      "description": "Token-denominated fee breakdown.",
+                      "properties": {
+                        "amountRaw": { "type": "string", "description": "Gross transfer amount in base units." },
+                        "feeRaw": { "type": "string", "description": "Total token fee deducted in base units." },
+                        "netDeliveredRaw": { "type": "string", "description": "Net amount delivered to recipient in base units." },
+                        "decimals": { "type": "integer" }
+                      }
+                    },
+                    "sol": {
+                      "type": "object",
+                      "description": "SOL cost breakdown. This SOL is required upfront to fund on-chain accounts.",
+                      "properties": {
+                        "requiredSolUpFrontLamports": {
+                          "type": "integer",
+                          "description": "Total SOL in lamports required from `sourceOwner` before signing."
+                        },
+                        "breakdown": {
+                          "type": "object",
+                          "properties": {
+                            "routeInitRentLamports": { "type": "integer" },
+                            "orchestratorRentLamports": { "type": "integer" },
+                            "ataRentLamports": { "type": "integer" },
+                            "transactionFeesLamports": { "type": "integer" },
+                            "priorityFeesLamports": { "type": "integer" },
+                            "protocolFlatFeeLamports": { "type": "integer" }
+                          }
+                        },
+                        "refundableLamports": {
+                          "type": "integer",
+                          "description": "Portion of the upfront SOL that is returned after the route settles."
+                        },
+                        "netCostLamports": {
+                          "type": "integer",
+                          "description": "Net non-refundable SOL cost."
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "tier": "standard",
+                  "percentFeeBps": 50,
+                  "percentFeeRaw": "500000",
+                  "flatFeeLamportsPerHop": 6000,
+                  "totalFlatFeeLamports": 42000,
+                  "integratorPercentShare": "250000",
+                  "integratorFlatShare": 21000,
+                  "usdEquivalent": 1502.50,
+                  "isTestMode": false,
+                  "tokens": {
+                    "amountRaw": "1000000000",
+                    "feeRaw": "5500000",
+                    "netDeliveredRaw": "994500000",
+                    "decimals": 9
+                  },
+                  "sol": {
+                    "requiredSolUpFrontLamports": 8500000,
+                    "breakdown": {
+                      "routeInitRentLamports": 2000000,
+                      "orchestratorRentLamports": 1500000,
+                      "ataRentLamports": 2000000,
+                      "transactionFeesLamports": 50000,
+                      "priorityFeesLamports": 50000,
+                      "protocolFlatFeeLamports": 900000
+                    },
+                    "refundableLamports": 5500000,
+                    "netCostLamports": 3000000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers": {
+      "post": {
+        "operationId": "createTransfer",
+        "summary": "Create Transfer",
+        "description": "Creates a new transfer and returns a quoted transfer object. The transfer is in `quote` status — call `/prepare` next to get the transactions to sign.\n\nIdempotent via `externalId` — sending the same `externalId` returns the existing transfer.",
+        "tags": ["Transfers"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tokenMint", "amountRaw", "amountTokens", "sourceOwner", "recipientWallet"],
+                "properties": {
+                  "tokenMint": {
+                    "type": "string",
+                    "description": "The Solana mint address of the token to transfer.",
+                    "example": "So11111111111111111111111111111111111111112"
+                  },
+                  "amountRaw": {
+                    "type": "string",
+                    "description": "Raw token amount as a string.",
+                    "example": "1000000000"
+                  },
+                  "amountTokens": {
+                    "type": "string",
+                    "description": "Human-readable token amount (e.g. `\"1.0\"`).",
+                    "example": "1.0"
+                  },
+                  "sourceOwner": {
+                    "type": "string",
+                    "description": "Solana public key of the wallet that will sign and pay for the deployment transactions.",
+                    "example": "Abc123..."
+                  },
+                  "recipientWallet": {
+                    "type": "string",
+                    "description": "Solana public key of the final recipient.",
+                    "example": "Def456..."
+                  },
+                  "tokenDecimals": {
+                    "type": "integer",
+                    "default": 6,
+                    "description": "Decimal precision of the token.",
+                    "example": 9
+                  },
+                  "tokenSymbol": {
+                    "type": "string",
+                    "description": "Token symbol (e.g. `\"SOL\"`). Optional, used for display purposes.",
+                    "example": "SOL"
+                  },
+                  "hops": {
+                    "type": "integer",
+                    "minimum": 3,
+                    "maximum": 10,
+                    "description": "Number of intermediate abstraction hops. Defaults to integration setting.",
+                    "example": 7
+                  },
+                  "arrivalSeconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "description": "Target transfer arrival time in seconds. Minimum: 60.",
+                    "example": 300
+                  },
+                  "externalId": {
+                    "type": "string",
+                    "description": "Your own identifier for idempotency (e.g. `\"order_12345\"`). Alphanumeric, `.`, `_`, `-` only.",
+                    "example": "order_12345"
+                  },
+                  "tokenPriceUsd": {
+                    "type": "number",
+                    "description": "Optional token price in USD for tier calculation. If not provided, resolved from Raydium.",
+                    "example": 150.25
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer created (status: `quote`)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Transfer" },
+                "example": {
+                  "id": 42,
+                  "externalId": "order_12345",
+                  "supportBundleId": "MH-acme-42",
+                  "tokenMint": "So111...112",
+                  "amountRaw": "1000000000",
+                  "amountTokens": "1.0",
+                  "sourceOwner": "Abc123...",
+                  "recipientWallet": "Def456...",
+                  "fundingStrategy": "direct_orchestration",
+                  "hops": 7,
+                  "arrivalSeconds": 300,
+                  "pricingTier": "standard",
+                  "percentFeeBps": 50,
+                  "totalFlatFeeLamports": 42000,
+                  "status": "quote",
+                  "isTest": false,
+                  "quotedAt": "2025-01-15T10:30:00.000Z",
+                  "expiresAt": "2025-01-15T11:00:00.000Z",
+                  "createdAt": "2025-01-15T10:30:00.000Z"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate externalId",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": {
+                  "code": "MH_033",
+                  "message": "Transfer already exists for externalId 'order_12345'"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listTransfers",
+        "summary": "List Transfers",
+        "description": "List transfers with pagination and optional filters.",
+        "tags": ["Transfers"],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["quote", "awaiting_signature", "processing", "completed", "failed", "expired", "refunded"]
+            },
+            "description": "Filter by transfer status."
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "ISO 8601 start date filter."
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "ISO 8601 end date filter."
+          },
+          {
+            "name": "externalId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by your external ID."
+          },
+          {
+            "name": "supportBundleId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by support bundle ID."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 },
+            "description": "Number of results to return (max 100)."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 },
+            "description": "Pagination offset."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of transfers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/TransferExtended" }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "limit": { "type": "integer" },
+                        "offset": { "type": "integer" }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 42,
+                      "externalId": "order_12345",
+                      "status": "completed",
+                      "phase": "settled",
+                      "progress": { "hopsCompleted": 7, "hopsTotal": 7 }
+                    }
+                  ],
+                  "pagination": { "total": 142, "limit": 50, "offset": 0 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/{transferId}": {
+      "get": {
+        "operationId": "getTransfer",
+        "summary": "Get Transfer",
+        "description": "Retrieve a transfer by its internal ID. Returns extended fields including `phase`, `progress`, `recovery`, and `signatures`.\n\nA companion endpoint at `GET /transfers/by-external/{externalId}` also exists.",
+        "tags": ["Transfers"],
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" },
+            "description": "The internal transfer ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer object with extended phase and progress fields",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TransferExtended" },
+                "example": {
+                  "id": 42,
+                  "status": "processing",
+                  "phase": "executing",
+                  "progress": { "hopsCompleted": 3, "hopsTotal": 7 },
+                  "recovery": null,
+                  "signatures": {
+                    "routeInit": ["4mGxFn7m..."],
+                    "sessionInit": ["2qYzLf1x..."],
+                    "hops": ["9rTpWx2a..."]
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Transfer not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "code": "MH_030", "message": "Transfer not found" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/{transferId}/prepare": {
+      "post": {
+        "operationId": "prepareTransfer",
+        "summary": "Prepare Transactions",
+        "description": "Probe on-chain state and build the unsigned transaction bundle for `sourceOwner` to sign. Returns all transactions needed to initialize the route, orchestrator, and step PDAs on-chain.\n\nThis endpoint is idempotent — calling it again generates a fresh bundle (new blockhash) that skips any steps already completed on-chain.",
+        "tags": ["Transfers"],
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" },
+            "description": "The internal transfer ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction bundle ready to sign",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer": { "$ref": "#/components/schemas/Transfer" },
+                    "preparedTxs": { "$ref": "#/components/schemas/PreparedTxBundle" }
+                  }
+                },
+                "example": {
+                  "transfer": {
+                    "id": 42,
+                    "status": "quote",
+                    "phase": "quoted"
+                  },
+                  "preparedTxs": {
+                    "routeInitTxs": [{ "base64": "AQAAAAAAAA..." }],
+                    "orchestratorInitTx": null,
+                    "sessionInitTxs": ["AQAAAAAAAA...", "AQAAAAAAAA..."],
+                    "keeperFundingTx": "AQAAAAAAAA...",
+                    "recentBlockhash": "BpFi8bTNRuLbUnrq7q1N1M...",
+                    "lastValidBlockHeight": 289043200,
+                    "resume": {
+                      "routeAlreadyDeployed": false,
+                      "existingHopCount": 0,
+                      "totalHops": 7,
+                      "orchestratorAlreadyInitialized": true,
+                      "completedStepIndices": [],
+                      "totalSteps": 7,
+                      "keeperAlreadyFunded": false,
+                      "nothingToDo": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/{transferId}/confirm-broadcast": {
+      "post": {
+        "operationId": "confirmBroadcast",
+        "summary": "Confirm Broadcast",
+        "description": "Report Solana transaction signatures after broadcasting prepared transactions. This endpoint is **resumable** — call it once immediately after broadcasting `keeperFundingTx` (with just `keeperFundingSignature`), then again at the end with all remaining signatures.\n\n**`keeperFundingSignature` is required** whenever `/prepare` emitted a `keeperFundingTx`. Submit it immediately after broadcast (before route-init txs) to prevent double-funding on resume. Omitting it when required returns `MH_039`.\n\nTransitions the transfer to `processing` once the full bundle is recorded. Can also be used to revive a `failed` transfer after re-broadcasting.",
+        "tags": ["Transfers"],
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" },
+            "description": "The internal transfer ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["routeInitSignatures"],
+                "properties": {
+                  "routeInitSignatures": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Base58 transaction signatures for the route initialization transactions.",
+                    "example": ["4mGxFn7mN1KqQe6aY7b5aYpEpxu9HfKpQ..."]
+                  },
+                  "orchestratorInitSignature": {
+                    "type": "string",
+                    "description": "Base58 signature for the orchestrator initialization transaction, if present in the bundle.",
+                    "example": "2qYzLf1xJx4oRz9MvBybHeY5uYk2eQ8T..."
+                  },
+                  "sessionInitSignatures": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Base58 signatures for the session (step PDA) initialization transactions.",
+                    "example": ["9rTpWx2aKm3Nv8Qz1bYsHe4uRk6eP7W..."]
+                  },
+                  "keeperFundingSignature": {
+                    "type": "string",
+                    "description": "Base58 signature for the keeper funding transaction, if present in the bundle.",
+                    "example": "7hGpRt4bJm2Kx9Nv5aZqYe3uLk8dQ1P..."
+                  }
+                }
+              },
+              "example": {
+                "routeInitSignatures": ["4mGxFn7mN1KqQe6aY7b5aYpEpxu9HfKpQ..."],
+                "sessionInitSignatures": ["9rTpWx2aKm3Nv8Qz1bYsHe4uRk6eP7W..."],
+                "keeperFundingSignature": "7hGpRt4bJm2Kx9Nv5aZqYe3uLk8dQ1P..."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Broadcast confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer": { "$ref": "#/components/schemas/Transfer" }
+                  }
+                },
+                "example": {
+                  "transfer": {
+                    "id": 42,
+                    "status": "processing",
+                    "phase": "deploying"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "MH_039 — keeper funding signature required",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "404": {
+            "description": "MH_036 — signature not found on chain",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "409": {
+            "description": "MH_035 — transfer not in a state that allows broadcast confirmation",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "422": {
+            "description": "MH_037 / MH_038 — transaction failed on-chain or did not invoke the MultiHopper program",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/transfers/{transferId}/rescue/prepare": {
+      "post": {
+        "operationId": "prepareRescue",
+        "summary": "Prepare Rescue",
+        "description": "Build transactions to recover SOL locked in on-chain accounts (route PDAs, step state PDAs, keeper balance) for a failed or stuck transfer. The returned transactions drain funds back to `sourceOwner`.\n\nOnly available when `recovery.canRescue` is `true` on the transfer.",
+        "tags": ["Recovery"],
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rescue transaction bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rescueTxs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "base64": { "type": "string" },
+                          "partialSigners": { "type": "array", "items": { "type": "string" } }
+                        }
+                      }
+                    },
+                    "recentBlockhash": { "type": "string" },
+                    "lastValidBlockHeight": { "type": "integer" },
+                    "rescuable": {
+                      "type": "object",
+                      "properties": {
+                        "totalLamports": { "type": "integer" },
+                        "accounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": { "type": "string" },
+                              "lamports": { "type": "integer" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/{transferId}/rescue/confirm": {
+      "post": {
+        "operationId": "confirmRescue",
+        "summary": "Confirm Rescue",
+        "description": "Confirm that rescue transactions have been signed and broadcast to Solana.",
+        "tags": ["Recovery"],
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["rescueSignatures"],
+                "properties": {
+                  "rescueSignatures": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Base58 signatures of the submitted rescue transactions.",
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rescue confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer": { "$ref": "#/components/schemas/TransferExtended" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/{transferId}/reclaim-rent/prepare": {
+      "post": {
+        "operationId": "prepareReclaimRent",
+        "summary": "Prepare Rent Reclaim",
+        "description": "After a transfer completes, build transactions to close step state PDAs and return rent to `sourceOwner`.\n\nOnly available when `recovery.canReclaimRent` is `true` on the transfer.",
+        "tags": ["Recovery"],
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rent reclaim transaction bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reclaimTxs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "base64": { "type": "string" },
+                          "partialSigners": { "type": "array", "items": { "type": "string" } }
+                        }
+                      }
+                    },
+                    "recentBlockhash": { "type": "string" },
+                    "lastValidBlockHeight": { "type": "integer" },
+                    "reclaimable": {
+                      "type": "object",
+                      "properties": {
+                        "totalLamports": { "type": "integer" },
+                        "stepCount": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/{transferId}/reclaim-rent/confirm": {
+      "post": {
+        "operationId": "confirmReclaimRent",
+        "summary": "Confirm Rent Reclaim",
+        "description": "Confirm that rent reclaim transactions have been broadcast.",
+        "tags": ["Recovery"],
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["reclaimSignatures"],
+                "properties": {
+                  "reclaimSignatures": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reclaim results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "confirmed": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Signatures that landed successfully."
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "signature": { "type": "string" },
+                          "error": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/by-external/{externalId}": {
+      "get": {
+        "operationId": "getTransferByExternalId",
+        "summary": "Get Transfer by External ID",
+        "description": "Retrieve a transfer by the `externalId` you provided at creation time. Returns the same extended response as `GET /transfers/{transferId}`.",
+        "tags": ["Transfers"],
+        "parameters": [
+          {
+            "name": "externalId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "The external ID provided when creating the transfer."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer object with extended phase and progress fields",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TransferExtended" }
+              }
+            }
+          },
+          "404": {
+            "description": "Transfer not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": { "code": "MH_030", "message": "Transfer not found" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/usage": {
+      "get": {
+        "operationId": "getUsage",
+        "summary": "Get Usage",
+        "description": "Get a usage and fee summary for your integration within an optional date range.",
+        "tags": ["Transfers"],
+        "parameters": [
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "ISO 8601 start date (inclusive).",
+            "example": "2025-01-01T00:00:00.000Z"
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "ISO 8601 end date (inclusive).",
+            "example": "2025-01-31T23:59:59.000Z"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalTransfers": { "type": "integer", "description": "Total transfers in the period." },
+                    "completedTransfers": { "type": "integer", "description": "Successfully completed transfers." },
+                    "failedTransfers": { "type": "integer", "description": "Failed transfers." },
+                    "totalVolumeRaw": { "type": "string", "description": "Total transfer volume in base token units (bigint as string)." },
+                    "totalFlatFeeEarned": { "type": "integer", "description": "Total flat fee earned by your integration in lamports." },
+                    "totalPayouts": { "type": "integer", "description": "Total integrator reward payouts settled on-chain." },
+                    "isTestMode": { "type": "boolean", "description": "Whether this summary reflects test-mode transfers." }
+                  }
+                },
+                "example": {
+                  "totalTransfers": 142,
+                  "completedTransfers": 130,
+                  "failedTransfers": 5,
+                  "totalVolumeRaw": "142000000000",
+                  "totalFlatFeeEarned": 5460000,
+                  "totalPayouts": 0,
+                  "isTestMode": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks": {
+      "post": {
+        "operationId": "createWebhook",
+        "summary": "Register Webhook",
+        "description": "Registers a webhook endpoint. Returns a signing secret — store it securely, it is only shown once.",
+        "tags": ["Webhooks"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "The HTTPS URL to receive webhook events.",
+                    "example": "https://your-app.com/webhooks/multihopper"
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "transfer.quote_created",
+                        "transfer.deposit_confirmed",
+                        "transfer.processing",
+                        "transfer.hop_complete",
+                        "transfer.completed",
+                        "transfer.failed",
+                        "transfer.expired",
+                        "transfer.refunded",
+                        "transfer.phase_changed",
+                        "transfer.recoverable",
+                        "transfer.rescued",
+                        "transfer.rent_reclaimed",
+                        "payout.completed"
+                      ]
+                    },
+                    "description": "List of event types to subscribe to. Defaults to all events if omitted.",
+                    "example": ["transfer.completed", "transfer.failed"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "integer" },
+                    "url": { "type": "string" },
+                    "secret": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "HMAC-SHA256 signing secret. Shown once — store securely."
+                    },
+                    "events": { "type": "array", "items": { "type": "string" }, "nullable": true },
+                    "isActive": { "type": "boolean" },
+                    "createdAt": { "type": "string", "format": "date-time" }
+                  }
+                },
+                "example": {
+                  "id": 1,
+                  "url": "https://your-app.com/webhooks/multihopper",
+                  "secret": "whsec_abc123...",
+                  "events": ["transfer.completed", "transfer.failed"],
+                  "isActive": true,
+                  "createdAt": "2025-01-10T00:00:00.000Z"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listWebhooks",
+        "summary": "List Webhooks",
+        "description": "List all registered webhook endpoints.",
+        "tags": ["Webhooks"],
+        "responses": {
+          "200": {
+            "description": "List of webhook endpoints",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "integer" },
+                          "url": { "type": "string" },
+                          "secret": { "type": "string", "nullable": true },
+                          "events": { "type": "array", "items": { "type": "string" }, "nullable": true },
+                          "isActive": { "type": "boolean" },
+                          "createdAt": { "type": "string", "format": "date-time" }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 1,
+                      "url": "https://your-app.com/webhooks/multihopper",
+                      "events": ["transfer.completed", "transfer.failed"],
+                      "isActive": true,
+                      "createdAt": "2025-01-10T00:00:00.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/{endpointId}": {
+      "delete": {
+        "operationId": "deleteWebhook",
+        "summary": "Delete Webhook",
+        "description": "Deactivate a registered webhook endpoint.",
+        "tags": ["Webhooks"],
+        "parameters": [
+          {
+            "name": "endpointId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook deactivated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": { "type": "boolean" }
+                  }
+                },
+                "example": { "deleted": true }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

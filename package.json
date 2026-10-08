@@ -1,0 +1,34 @@
+{
+  "name": "multihopper-agentic-audit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docs:fetch": "tsx src/fetchDocs.ts",
+    "docs:check": "tsx src/docsCheck.ts",
+    "audit:env": "tsx src/envCheck.ts",
+    "audit:dry-run": "tsx src/dryRun.ts",
+    "audit:api:smoke": "tsx src/apiSmoke.ts",
+    "audit:create-probe": "tsx src/createQuoteProbe.ts",
+    "audit:prepare-probe": "tsx src/prepareProbe.ts",
+    "audit:get-transfer": "tsx src/getTransfer.ts",
+    "audit:api-behavior": "tsx src/apiBehaviorProbe.ts",
+    "audit:live-devnet": "tsx src/liveDevnetTransfer.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.0.0"
+  },
+  "overrides": {
+    "jayson": {
+      "uuid": "^11.1.1"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}
